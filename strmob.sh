@@ -90,20 +90,17 @@ sorting () {
 		awk '{$1=""; print $0}' "$parent"/.tmpFile3 | sed 's/^\s*//g' > "$parent"/.final
 		cp "$parent"/.final "$parent"/strings."$name"
 	else
-		# insert a sacrificial placeholder line so that later perl doesn't eat
-		# the first string. then print out all strings with a file percentage
-		# ruler and the file offset of the string
-		echo -e "1 placeholder_line_ignore_me\n$(cat "$parent"/.tmpFile3)" > "$parent"/.final
+		cp "${parent}/.tmpFile3" "${parent}/.final"
 		printStatus '> Adding offset and progress ruler' $quiet
 
-		`cat "$parent"/.final | perl -ne '$l=0; open(FH, "'"$parent"/.final'");' \
-			-e '$l++ while(<FH>); close(FH);' \
+		`perl -e '$l=0; open(FH, "'"$parent"/.final'");' \
+			-e '$l++ while(<FH>); seek FH,0,0;' \
 			-e '$chunk = ($l / 100);' \
-			-e '$ln=0; $p=1; foreach(<>) {' \
+			-e '$ln=0; $p=1; foreach(<FH>) {' \
 			-e '/^\s*?(\d+)\s+(.*)$/; $offset=$1; $string=$2;' \
 			-e '$hex = sprintf("0x%X", $offset);' \
 			-e 'printf("%s\%\t%-8s:  %-s\n", $p, $hex, $string); $ln++;' \
-			-e 'if($ln > ($chunk * $p)) {$p++;}' \
+			-e 'if($ln > ($chunk * $p)) {$p++;} close(FH);' \
 			-e '}' > "$parent"/strings."$name"`
 	fi
 }
