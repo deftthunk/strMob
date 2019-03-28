@@ -36,17 +36,17 @@ printStatus () {
 
 parse () {
 	quiet=$1
-	parent="$2"
+	dest="$2"
 	f="$3"
 	fname="`basename "$3"`"
 	printStatus '> Finding 7/16/32-bit (big/little)endian' $quiet
 
-	strings -a -es -n $minStrLen --radix=d "$f" > "$parent"/.strings_es_"$fname" & \
-	strings -a -eS -n $minStrLen --radix=d "$f" > "$parent"/.strings_eS_"$fname" & \
-	strings -a -el -n $minStrLen --radix=d "$f" > "$parent"/.strings_el_"$fname" & \
-	strings -a -eL -n $minStrLen --radix=d "$f" > "$parent"/.strings_eL_"$fname" & \
-	strings -a -eb -n $minStrLen --radix=d "$f" > "$parent"/.strings_eb_"$fname" & \
-	strings -a -eB -n $minStrLen --radix=d "$f" > "$parent"/.strings_eB_"$fname" &
+	strings -a -es -n $minStrLen --radix=d "$f" > "$dest"/.strings_es_"$fname" & \
+	strings -a -eS -n $minStrLen --radix=d "$f" > "$dest"/.strings_eS_"$fname" & \
+	strings -a -el -n $minStrLen --radix=d "$f" > "$dest"/.strings_el_"$fname" & \
+	strings -a -eL -n $minStrLen --radix=d "$f" > "$dest"/.strings_eL_"$fname" & \
+	strings -a -eb -n $minStrLen --radix=d "$f" > "$dest"/.strings_eb_"$fname" & \
+	strings -a -eB -n $minStrLen --radix=d "$f" > "$dest"/.strings_eB_"$fname" &
 
 	while [[ `ps -C strings --no-header` ]]; do
 		sleep 1
@@ -56,44 +56,44 @@ parse () {
 
 process () {
 	quiet=$1
-	parent="$2"
+	dest="$2"
 	printStatus '> Prune unlikely candidates' $quiet
-	grep -P --binary-files=text "^\s*?\d+\s.*?[0-9A-Za-z]{$minStrLen}" "$parent"/.strall > "$parent"/.out."$name"
+	grep -P --binary-files=text "^\s*?\d+\s.*?[0-9A-Za-z]{$minStrLen}" "$dest"/.strall > "$dest"/.out."$name"
 
 	printStatus '> Replace non-ascii chars with whitespace' $quiet
-	perl -i -pe 's/[^[:ascii:]]/\s/g' "$parent"/.out."$name"
+	perl -i -pe 's/[^[:ascii:]]/\s/g' "$dest"/.out."$name"
 
 	printStatus '>    --Pass 1/3' $quiet
-	sed -i 's/\s\s+/\s/g' "$parent"/.out."$name"
+	sed -i 's/\s\s+/\s/g' "$dest"/.out."$name"
 
 	printStatus '>    --Pass 2/3' $quiet
-	sed -i 's/^\s//g' "$parent"/.out."$name"
+	sed -i 's/^\s//g' "$dest"/.out."$name"
 
 	printStatus '>    --Pass 3/3' $quiet
-	sed -i 's/\s$//g' "$parent"/.out."$name"
+	sed -i 's/\s$//g' "$dest"/.out."$name"
 }
 
 
 sorting () {
 	quiet=$1
-	parent="$2"
+	dest="$2"
 	printStatus '> Sort and uniq' $quiet
-	sort -k2 --ignore-nonprinting --parallel=$threads -o "$parent"/.tmpFile1 "$parent"/.out."$name"
-	uniq -f1 -i "$parent"/.tmpFile1 "$parent"/.tmpFile2
+	sort -k2 --ignore-nonprinting --parallel=$threads -o "$dest"/.tmpFile1 "$dest"/.out."$name"
+	uniq -f1 -i "$dest"/.tmpFile1 "$dest"/.tmpFile2
 
 	printStatus '> Rearrange strings to original ordering' $quiet
-	sort -k1 -n --parallel=$threads -o "$parent"/.tmpFile3 "$parent"/.tmpFile2
+	sort -k1 -n --parallel=$threads -o "$dest"/.tmpFile3 "$dest"/.tmpFile2
 
 	# determine if user wants to print out rulers or just strings
 	if [[ $quiet -eq 1 ]]; then
 		# print all but first column, removing file indexing but preserving order
-		awk '{$1=""; print $0}' "$parent"/.tmpFile3 | sed 's/^\s*//g' > "$parent"/.final
-		cp "$parent"/.final "$parent"/strings."$name"
+		awk '{$1=""; print $0}' "$dest"/.tmpFile3 | sed 's/^\s*//g' > "$dest"/.final
+		cp "$dest"/.final "$dest"/strings."$name"
 	else
-		cp "${parent}/.tmpFile3" "${parent}/.final"
+		cp "${dest}/.tmpFile3" "${dest}/.final"
 		printStatus '> Adding offset and progress ruler' $quiet
 
-		`perl -e '$l=0; open(FH, "'"$parent"/.final'");' \
+		`perl -e '$l=0; open(FH, "'"$dest"/.final'");' \
 			-e '$l++ while(<FH>); seek FH,0,0;' \
 			-e '$chunk = ($l / 100);' \
 			-e '$ln=0; $p=1; foreach(<FH>) {' \
@@ -101,7 +101,7 @@ sorting () {
 			-e '$hex = sprintf("0x%X", $offset);' \
 			-e 'printf("%s\%\t%-8s:  %-s\n", $p, $hex, $string); $ln++;' \
 			-e 'if($ln > ($chunk * $p)) {$p++;} close(FH);' \
-			-e '}' > "$parent"/strings."$name"`
+			-e '}' > "$dest"/strings."$name"`
 	fi
 }
 
@@ -123,34 +123,30 @@ main () {
 
 		path="$file"
 		name="`basename "$file"`"
-		parent="`dirname "$file"`"
+		dest="$PWD"
 
-		if [[ "$parent" == '.' ]]; then
-			parent="$PWD"
-		fi
-
-		parse $quiet "$parent" "$path"
+		parse $quiet "$dest" "$path"
 
 		# roundabout way to handle paths/names with spaces, since bash often has
 		# problems handling this in scripts
-		exec 9< <( find "$parent" -type f -name '.strings_*' -print0 )
+		exec 9< <( find "$dest" -type f -name '.strings_*' -print0 )
 		while IFS= read -r -d '' -u 9; do
 			strTempFile="$(readlink -fn -- "$REPLY"; echo x)"
 			strTempFile="${strTempFile%x}"
-			cat "$strTempFile" >> "$parent"/.strall
+			cat "$strTempFile" >> "$dest"/.strall
 		done
 
-		process $quiet "$parent"
-		sorting $quiet "$parent"
+		process $quiet "$dest"
+		sorting $quiet "$dest"
 
 		printStatus '> Cleaning up' $quiet
-		exec 9< <( find "$parent" -type f \( -name ".strings_*" -o -name '.tmpFile*' \) -print0 )
+		exec 9< <( find "$dest" -type f \( -name ".strings_*" -o -name '.tmpFile*' \) -print0 )
 		while IFS= read -r -d '' -u 9; do
 			delFile="$(readlink -fn -- "$REPLY"; echo x)"
 			delFile="${delFile%x}"
 			rm "$delFile"
 		done
-		rm "$parent"/.strall "$parent"/.final "$parent"/.out."$name"
+		rm "$dest"/.strall "$dest"/.final "$dest"/.out."$name"
 	
 	done
 }
